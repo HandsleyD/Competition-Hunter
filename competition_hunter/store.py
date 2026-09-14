@@ -14,7 +14,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from competition_hunter.models import Competition, EntryAttempt
+from competition_hunter.models import Competition, EntryAttempt, Win
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS competitions (
@@ -53,6 +53,18 @@ CREATE TABLE IF NOT EXISTS field_maps (
     domain      TEXT PRIMARY KEY,
     mapping     TEXT NOT NULL,  -- JSON {profile_key: css_selector}
     updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS wins (
+    message_id         TEXT PRIMARY KEY,
+    received_at        TEXT NOT NULL,
+    subject            TEXT NOT NULL,
+    sender             TEXT NOT NULL,
+    is_win             INTEGER NOT NULL,
+    competition_id     TEXT REFERENCES competitions(id),
+    prize_description  TEXT NOT NULL DEFAULT '',
+    confidence         REAL NOT NULL DEFAULT 0,
+    created_at         TEXT NOT NULL
 );
 """
 
@@ -314,3 +326,89 @@ def set_field_map(conn: sqlite3.Connection, domain: str, mapping: dict[str, str]
         (domain, json.dumps(mapping), datetime.now(UTC).isoformat()),
     )
     conn.commit()
+
+
+def _row_to_win(row: sqlite3.Row) -> Win:
+    return Win(
+        message_id=row["message_id"],
+        received_at=datetime.fromisoformat(row["received_at"]),
+        subject=row["subject"],
+        sender=row["sender"],
+        is_win=bool(row["is_win"]),
+        competition_id=row["competition_id"],
+        prize_description=row["prize_description"],
+        confidence=row["confidence"],
+        created_at=datetime.fromisoformat(row["created_at"]),
+    )
+
+
+def has_processed_email(conn: sqlite3.Connection, message_id: str) -> bool:
+    """Has this email already been classified? The wins table doubles as the
+    dedupe ledger, so a re-fetched email is never sent to the LLM twice."""
+    row = conn.execute("SELECT 1 FROM wins WHERE message_id = ? LIMIT 1", (message_id,)).fetchone()
+    return row is not None
+
+
+def record_win(conn: sqlite3.Connection, win: Win) -> None:
+    """Persist one classified email — win or not. `ON CONFLICT DO NOTHING`
+    makes this safe to call even if `has_processed_email` was raced."""
+    conn.execute(
+        """
+        INSERT INTO wins (
+            message_id, received_at, subject, sender, is_win,
+            competition_id, prize_description, confidence, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(message_id) DO NOTHING
+        """,
+        (
+            win.message_id,
+            win.received_at.isoformat(),
+            win.subject,
+            win.sender,
+            int(win.is_win),
+            win.competition_id,
+            win.prize_description,
+            win.confidence,
+            win.created_at.isoformat(),
+        ),
+    )
+    conn.commit()
+
+
+def get_wins(conn: sqlite3.Connection) -> list[Win]:
+    rows = conn.execute("SELECT * FROM wins WHERE is_win = 1 ORDER BY received_at DESC").fetchall()
+    return [_row_to_win(row) for row in rows]
+
+
+def get_entered_competitions(conn: sqlite3.Connection) -> list[Competition]:
+    """Every competition that ever had a submitted entry — the population a
+    win can plausibly be matched against, and the denominator for hit rate."""
+    rows = conn.execute(
+        """
+        SELECT DISTINCT c.* FROM competitions c
+        JOIN entry_attempts e ON e.competition_id = c.id
+        WHERE e.outcome = 'submitted'
+        """
+    ).fetchall()
+    return [_row_to_competition(row) for row in rows]
+
+
+def hit_rate_by_score_band(
+    conn: sqlite3.Connection, bands: Iterable[tuple[float, float]]
+) -> list[dict]:
+    """Entered vs. won counts per `[lo, hi)` score band — design-options.md
+    §6's "measured hit rate per score band", the actual feedback signal on
+    whether the scoring model in pipeline/score.py is any good."""
+    entered = get_entered_competitions(conn)
+    won_ids = {w.competition_id for w in get_wins(conn) if w.competition_id}
+    results = []
+    for lo, hi in bands:
+        in_band = [c for c in entered if lo <= c.score < hi]
+        results.append(
+            {
+                "band": (lo, hi),
+                "entered": len(in_band),
+                "won": sum(1 for c in in_band if c.id in won_ids),
+            }
+        )
+    return results

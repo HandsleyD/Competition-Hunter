@@ -15,6 +15,7 @@ dependencies = [
 [project.scripts]
 competition-hunter = "competition_hunter.cli:main"
 competition-hunter-entry = "competition_hunter.entry.run:main"
+competition-hunter-wins = "competition_hunter.wins.run:main"
 
 [build-system]
 requires = ["uv_build>=0.8.17,<0.9.0"]
