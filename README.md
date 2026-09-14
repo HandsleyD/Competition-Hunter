@@ -15,14 +15,15 @@ built yet.
 
 ```bash
 uv sync
-export ANTHROPIC_API_KEY=...   # optional — enrichment is skipped without it
+export GEMINI_API_KEY=...   # optional — enrichment is skipped without it; free tier at aistudio.google.com
 uv run competition-hunter --db competitions.db --out dashboard/out
 ```
 
 This fetches the configured RSS feeds, dedupes them against the SQLite
-database, enriches any new competitions with an LLM call (title/description
-→ promoter, prize value, closing date, entry mechanic, restrictions), scores
-them by £-per-minute-of-effort, and writes `dashboard/out/index.html` ranked
+database, enriches any new competitions with an LLM call via Gemini
+(title/description → promoter, prize value, closing date, entry mechanic,
+restrictions — chosen over Anthropic for its no-payment-method free tier),
+scores them by £-per-minute-of-effort, and writes `dashboard/out/index.html` ranked
 highest score first. In production this runs on a schedule via
 [`.github/workflows/discover.yml`](.github/workflows/discover.yml), which
 publishes the dashboard to GitHub Pages — see the trust split in

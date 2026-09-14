@@ -7,9 +7,11 @@ This is what .github/workflows/discover.yml runs on a schedule. It only ever
 touches public data — the trust split in docs/implementation-plan.md keeps
 profile.toml and the entry layer off this path entirely.
 
-Enrichment needs `ANTHROPIC_API_KEY` in the environment; without it, this
+Enrichment needs `GEMINI_API_KEY` in the environment; without it, this
 still runs end-to-end (competitions just stay unenriched, and score with
 default assumptions) rather than failing outright — useful for local dev.
+Gemini rather than Anthropic here specifically because its free tier needs
+no payment method — see `competition_hunter/llm.py`.
 """
 
 from __future__ import annotations
@@ -18,11 +20,10 @@ import argparse
 import logging
 import os
 
-import anthropic
-
 from competition_hunter import store
 from competition_hunter.dashboard.build import build as build_dashboard
 from competition_hunter.ingest.rss import default_sources
+from competition_hunter.llm import GeminiClient
 from competition_hunter.pipeline.enrich import enrich_all
 from competition_hunter.pipeline.normalise import normalise_and_dedupe
 from competition_hunter.pipeline.score import score_all
@@ -30,14 +31,12 @@ from competition_hunter.pipeline.score import score_all
 logger = logging.getLogger("competition_hunter")
 
 
-def _make_llm_client() -> anthropic.Anthropic | None:
-    # Checked explicitly rather than left to the SDK: newer anthropic clients
-    # defer auth validation to request time, so constructing one without a
-    # key doesn't raise until the first real API call.
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        logger.warning("ANTHROPIC_API_KEY not set — skipping enrichment this run")
+def _make_llm_client() -> GeminiClient | None:
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        logger.warning("GEMINI_API_KEY not set — skipping enrichment this run")
         return None
-    return anthropic.Anthropic()
+    return GeminiClient(api_key=api_key)
 
 
 def run(db_path: str, output_dir: str, *, resolve_redirects: bool = True) -> int:
