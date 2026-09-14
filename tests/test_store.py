@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 
@@ -92,3 +93,83 @@ def test_get_competitions_orders_by_closes_at_nulls_last(conn):
     ordered = store.get_competitions(conn, order_by="closes_at")
 
     assert [c.id for c in ordered] == ["closes-soon", "no-close"]
+
+
+def test_get_unenriched_returns_only_never_enriched_competitions(conn):
+    store.upsert_competition(conn, _competition(id="fresh"))
+    store.upsert_competition(
+        conn, _competition(id="done", canonical_url="https://example.com/other")
+    )
+    store.mark_enriched(conn, store.get_competitions(conn, order_by="first_seen")[1])
+
+    unenriched = store.get_unenriched(conn)
+
+    assert [c.id for c in unenriched] == ["fresh"]
+
+
+def test_mark_enriched_persists_extracted_fields_and_sets_the_flag(conn):
+    store.upsert_competition(conn, _competition())
+
+    enriched = _competition(
+        promoter="Acme Ltd",
+        prize_value_gbp=Decimal("250"),
+        closes_at=datetime(2026, 12, 25, tzinfo=UTC),
+        entry_mechanic="web_form",
+        is_skill_based=True,
+        uk_only=True,
+        min_age=18,
+    )
+    store.mark_enriched(conn, enriched)
+
+    [stored] = store.get_competitions(conn)
+    assert stored.enriched is True
+    assert stored.promoter == "Acme Ltd"
+    assert stored.prize_value_gbp == Decimal("250")
+    assert stored.is_skill_based is True
+    assert stored.min_age == 18
+
+
+def test_upsert_does_not_clobber_enrichment_on_resighting(conn):
+    store.upsert_competition(conn, _competition())
+    store.mark_enriched(conn, _competition(promoter="Acme Ltd", is_skill_based=True))
+
+    # A later ingest run re-sees the same competition as fresh, un-enriched data.
+    store.upsert_competition(
+        conn, _competition(source_urls=["https://example.com/comp?utm_source=c"])
+    )
+
+    [stored] = store.get_competitions(conn)
+    assert stored.enriched is True
+    assert stored.promoter == "Acme Ltd"
+    assert stored.is_skill_based is True
+    assert stored.source_count == 2  # the re-sighting still contributes to dedupe
+
+
+def test_update_scores_writes_the_score_column(conn):
+    store.upsert_competition(conn, _competition())
+
+    store.update_scores(conn, [_competition(score=42.5)])
+
+    [stored] = store.get_competitions(conn)
+    assert stored.score == 42.5
+
+
+def test_repeatable_progress_counts_daily_comps_entered_today(conn):
+    store.upsert_competition(conn, _competition(id="daily-1", repeat_interval="daily"))
+    store.upsert_competition(
+        conn,
+        _competition(
+            id="daily-2", canonical_url="https://example.com/two", repeat_interval="daily"
+        ),
+    )
+    store.upsert_competition(
+        conn, _competition(id="once", canonical_url="https://example.com/three")
+    )
+    store.record_entry_attempt(
+        conn,
+        EntryAttempt(competition_id="daily-1", attempted_at=datetime.now(UTC), outcome="submitted"),
+    )
+
+    done, total = store.repeatable_progress(conn)
+
+    assert (done, total) == (1, 2)

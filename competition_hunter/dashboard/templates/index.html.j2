@@ -6,37 +6,49 @@
 <title>Competition Hunter</title>
 <style>
   :root { color-scheme: light dark; }
-  body { font-family: system-ui, sans-serif; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; }
+  body { font-family: system-ui, sans-serif; max-width: 64rem; margin: 2rem auto; padding: 0 1rem; }
   h1 { margin-bottom: 0.25rem; }
-  .meta { color: #666; margin-bottom: 1.5rem; }
+  .meta { color: #666; margin-bottom: 1rem; }
+  .tracker { background: rgba(127, 127, 127, 0.1); border-radius: 0.5rem; padding: 0.75rem 1rem; margin-bottom: 1.5rem; }
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #ddd; }
-  th { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.02em; }
+  th { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.02em; cursor: pointer; user-select: none; }
+  th:hover { text-decoration: underline; }
+  th.numeric, td.numeric { text-align: right; }
   tr:hover { background: rgba(127, 127, 127, 0.08); }
   .closing-soon { color: #c00; font-weight: 600; }
-  .source-count { color: #666; font-size: 0.85rem; }
+  .source-count { color: #666; }
   a { color: inherit; }
   .empty { color: #666; font-style: italic; }
 </style>
 </head>
 <body>
   <h1>Competition Hunter</h1>
-  <p class="meta">{{ competitions | length }} open competitions &middot; built {{ generated_at }}</p>
+  <p class="meta">{{ competitions | length }} open competitions &middot; built {{ generated_at }} &middot; ranked by score (£ per minute of effort)</p>
+  {% if repeatables_total > 0 %}
+  <p class="tracker">Repeatables: <strong>{{ repeatables_done }} of {{ repeatables_total }}</strong> done today</p>
+  {% endif %}
   {% if competitions %}
-  <table>
+  <table id="comps">
     <thead>
       <tr>
-        <th>Title</th>
-        <th>Closes</th>
-        <th>Sources</th>
+        <th data-sort="title">Title</th>
+        <th data-sort="promoter">Promoter</th>
+        <th data-sort="prize" class="numeric">Prize</th>
+        <th data-sort="closes">Closes</th>
+        <th data-sort="sources" class="numeric">Sources</th>
+        <th data-sort="score" class="numeric">Score</th>
       </tr>
     </thead>
     <tbody>
       {% for c in competitions %}
       <tr>
         <td><a href="{{ c.canonical_url }}" target="_blank" rel="noopener">{{ c.title }}</a></td>
-        <td class="{{ 'closing-soon' if c.closing_soon else '' }}">{{ c.closes_at or '—' }}</td>
-        <td class="source-count">{{ c.source_count }}</td>
+        <td>{{ c.promoter }}</td>
+        <td class="numeric">{{ c.prize_value_gbp }}</td>
+        <td class="{{ 'closing-soon' if c.closing_soon else '' }}" data-value="{{ c.closes_at or '' }}">{{ c.closes_at or '—' }}</td>
+        <td class="numeric source-count">{{ c.source_count }}</td>
+        <td class="numeric" data-value="{{ c.score }}">{{ "%.2f"|format(c.score) }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -44,5 +56,37 @@
   {% else %}
   <p class="empty">No competitions ingested yet.</p>
   {% endif %}
+  <script>
+    (function () {
+      var table = document.getElementById('comps');
+      if (!table) return;
+      var tbody = table.tBodies[0];
+      var headers = table.querySelectorAll('th[data-sort]');
+      var sortState = {};
+
+      function cellValue(row, index) {
+        var cell = row.cells[index];
+        var raw = cell.hasAttribute('data-value') ? cell.getAttribute('data-value') : cell.textContent;
+        var num = parseFloat(raw.replace(/[£,]/g, ''));
+        return isNaN(num) ? raw.trim().toLowerCase() : num;
+      }
+
+      headers.forEach(function (header, index) {
+        header.addEventListener('click', function () {
+          var ascending = !sortState[index];
+          sortState = {};
+          sortState[index] = ascending;
+          var rows = Array.prototype.slice.call(tbody.rows);
+          rows.sort(function (a, b) {
+            var av = cellValue(a, index), bv = cellValue(b, index);
+            if (av < bv) return ascending ? -1 : 1;
+            if (av > bv) return ascending ? 1 : -1;
+            return 0;
+          });
+          rows.forEach(function (row) { tbody.appendChild(row); });
+        });
+      });
+    })();
+  </script>
 </body>
 </html>

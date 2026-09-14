@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS competitions (
     source_urls        TEXT NOT NULL,   -- JSON list[str]
     source_count       INTEGER NOT NULL,
     title              TEXT NOT NULL,
+    description        TEXT NOT NULL DEFAULT '',
+    enriched           INTEGER NOT NULL DEFAULT 0,
     promoter           TEXT,
     prize_value_gbp    TEXT,            -- Decimal stored as string
     closes_at          TEXT,            -- ISO 8601
@@ -49,10 +51,29 @@ CREATE INDEX IF NOT EXISTS idx_entry_attempts_comp_date
 """
 
 
+# Columns added after the initial schema. New databases get them from SCHEMA
+# above; existing ones (e.g. the cached DB a previous discover.yml run left
+# behind) get them bolted on here — a lightweight stand-in for a migration
+# framework that isn't worth the overhead at this scale.
+_ADDED_COLUMNS = {
+    "description": "TEXT NOT NULL DEFAULT ''",
+    "enriched": "INTEGER NOT NULL DEFAULT 0",
+}
+
+
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(competitions)")}
+    for column, ddl in _ADDED_COLUMNS.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE competitions ADD COLUMN {column} {ddl}")
+    conn.commit()
+
+
 def connect(db_path: str | Path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    _add_missing_columns(conn)
     return conn
 
 
@@ -63,6 +84,8 @@ def _row_to_competition(row: sqlite3.Row) -> Competition:
         source_urls=json.loads(row["source_urls"]),
         source_count=row["source_count"],
         title=row["title"],
+        description=row["description"],
+        enriched=bool(row["enriched"]),
         promoter=row["promoter"],
         prize_value_gbp=Decimal(row["prize_value_gbp"]) if row["prize_value_gbp"] else None,
         closes_at=datetime.fromisoformat(row["closes_at"]) if row["closes_at"] else None,
@@ -82,9 +105,15 @@ def upsert_competition(conn: sqlite3.Connection, competition: Competition) -> Co
 
     Merging matters because the same competition arrives repeatedly from every
     source that lists it — that's the dedupe input for `source_count`
-    (design-options.md §5), not something to discard. Mutable fields (title,
-    closing date, ...) take the incoming value since a re-crawl is more
-    current; `first_seen` and the accumulated `source_urls` never regress.
+    (design-options.md §5), not something to discard. `first_seen` and the
+    accumulated `source_urls` never regress.
+
+    A re-sighting is always freshly normalised, un-enriched data (see
+    `pipeline/normalise.py`), so the merge only ever touches listing-derived
+    fields (title, description, source_urls). It never overwrites the
+    enrichment-owned fields — promoter, prize, closing date, entry mechanic,
+    `enriched` itself — which only `mark_enriched` sets, or a re-sighting one
+    ingest run after enrichment would wipe them back to "unknown" every time.
     """
     existing = conn.execute("SELECT * FROM competitions WHERE id = ?", (competition.id,)).fetchone()
 
@@ -92,10 +121,11 @@ def upsert_competition(conn: sqlite3.Connection, competition: Competition) -> Co
         conn.execute(
             """
             INSERT INTO competitions (
-                id, canonical_url, source_urls, source_count, title, promoter,
-                prize_value_gbp, closes_at, entry_mechanic, is_skill_based,
-                requires_purchase, uk_only, min_age, repeat_interval, score, first_seen
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                id, canonical_url, source_urls, source_count, title, description,
+                enriched, promoter, prize_value_gbp, closes_at, entry_mechanic,
+                is_skill_based, requires_purchase, uk_only, min_age, repeat_interval,
+                score, first_seen
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 competition.id,
@@ -103,6 +133,8 @@ def upsert_competition(conn: sqlite3.Connection, competition: Competition) -> Co
                 json.dumps(competition.source_urls),
                 competition.source_count,
                 competition.title,
+                competition.description,
+                int(competition.enriched),
                 competition.promoter,
                 str(competition.prize_value_gbp) if competition.prize_value_gbp else None,
                 competition.closes_at.isoformat() if competition.closes_at else None,
@@ -121,23 +153,19 @@ def upsert_competition(conn: sqlite3.Connection, competition: Competition) -> Co
 
     merged_urls = sorted(set(json.loads(existing["source_urls"])) | set(competition.source_urls))
     first_seen = min(datetime.fromisoformat(existing["first_seen"]), competition.first_seen)
+    description = competition.description or existing["description"]
 
     conn.execute(
         """
         UPDATE competitions SET
-            source_urls = ?, source_count = ?, title = ?, promoter = ?,
-            prize_value_gbp = ?, closes_at = ?, entry_mechanic = ?,
-            first_seen = ?
+            source_urls = ?, source_count = ?, title = ?, description = ?, first_seen = ?
         WHERE id = ?
         """,
         (
             json.dumps(merged_urls),
             len(merged_urls),
             competition.title,
-            competition.promoter,
-            str(competition.prize_value_gbp) if competition.prize_value_gbp else None,
-            competition.closes_at.isoformat() if competition.closes_at else None,
-            competition.entry_mechanic,
+            description,
             first_seen.isoformat(),
             competition.id,
         ),
@@ -155,6 +183,51 @@ def get_competitions(conn: sqlite3.Connection, order_by: str = "closes_at") -> l
         f"SELECT * FROM competitions ORDER BY {order_by} IS NULL, {order_by} ASC"  # noqa: S608
     ).fetchall()
     return [_row_to_competition(row) for row in rows]
+
+
+def get_unenriched(conn: sqlite3.Connection) -> list[Competition]:
+    """Competitions that have never had an enrichment pass. See `mark_enriched`."""
+    rows = conn.execute("SELECT * FROM competitions WHERE enriched = 0").fetchall()
+    return [_row_to_competition(row) for row in rows]
+
+
+def mark_enriched(conn: sqlite3.Connection, competition: Competition) -> None:
+    """Persist one competition's enrichment result and flag it as done.
+
+    Set regardless of whether the extraction actually found anything, so a
+    description the LLM can't get useful fields from is never retried —
+    "cache by competition_id, never re-enrich" (implementation-plan.md).
+    """
+    conn.execute(
+        """
+        UPDATE competitions SET
+            enriched = 1, promoter = ?, prize_value_gbp = ?, closes_at = ?,
+            entry_mechanic = ?, is_skill_based = ?, requires_purchase = ?,
+            uk_only = ?, min_age = ?, repeat_interval = ?
+        WHERE id = ?
+        """,
+        (
+            competition.promoter,
+            str(competition.prize_value_gbp) if competition.prize_value_gbp else None,
+            competition.closes_at.isoformat() if competition.closes_at else None,
+            competition.entry_mechanic,
+            int(competition.is_skill_based),
+            int(competition.requires_purchase),
+            int(competition.uk_only),
+            competition.min_age,
+            competition.repeat_interval,
+            competition.id,
+        ),
+    )
+    conn.commit()
+
+
+def update_scores(conn: sqlite3.Connection, competitions: Iterable[Competition]) -> None:
+    conn.executemany(
+        "UPDATE competitions SET score = ? WHERE id = ?",
+        [(c.score, c.id) for c in competitions],
+    )
+    conn.commit()
 
 
 def record_entry_attempt(conn: sqlite3.Connection, attempt: EntryAttempt) -> None:
@@ -179,6 +252,27 @@ def entered_today(conn: sqlite3.Connection, competition_id: str, today: date | N
         (competition_id, today.isoformat()),
     ).fetchone()
     return row is not None
+
+
+def repeatable_progress(conn: sqlite3.Connection, today: date | None = None) -> tuple[int, int]:
+    """(done, total) daily-repeatable competitions entered today.
+
+    The single highest-value dashboard feature per design-options.md §5 —
+    "X of Y repeatables done today" is what spreadsheets do worst.
+    """
+    today = today or datetime.now(UTC).date()
+    total = conn.execute(
+        "SELECT COUNT(*) FROM competitions WHERE repeat_interval = 'daily'"
+    ).fetchone()[0]
+    done = conn.execute(
+        """
+        SELECT COUNT(DISTINCT competition_id) FROM entry_attempts
+        WHERE outcome = 'submitted' AND date(attempted_at) = ?
+        AND competition_id IN (SELECT id FROM competitions WHERE repeat_interval = 'daily')
+        """,
+        (today.isoformat(),),
+    ).fetchone()[0]
+    return done, total
 
 
 def upsert_all(conn: sqlite3.Connection, competitions: Iterable[Competition]) -> list[Competition]:
