@@ -4,11 +4,10 @@ design-options.md §3A picks ThePrizeFinder's `/feeds` as the spine: structured,
 stable, and published explicitly for consumption by software.
 
 NOTE: this Claude Code environment's egress proxy blocks theprizefinder.com
-(design-options.md §4), so the exact feed URLs below could not be confirmed
-live from here — confirm against https://www.theprizefinder.com/feeds before
-the first real run (GitHub Actions has open network access and is where this
-runs in production). `parse_feed` is unit-tested against a recorded fixture
-in tests/fixtures/ and does not depend on the URLs being right.
+(design-options.md §4), so these feed URLs were confirmed by the project
+owner directly from https://www.theprizefinder.com/feeds rather than from
+this session. `parse_feed` is unit-tested against a recorded fixture in
+tests/fixtures/ and does not depend on the URLs being right.
 """
 
 from __future__ import annotations
@@ -24,11 +23,10 @@ from competition_hunter.models import RawListing
 
 USER_AGENT = "competition-hunter/0.1 (+https://github.com/handsleyd/competition-hunter)"
 
-# Verify against https://www.theprizefinder.com/feeds — see module docstring.
 THEPRIZEFINDER_FEEDS: dict[str, str] = {
-    "theprizefinder-new": "https://www.theprizefinder.com/feeds/new",
-    "theprizefinder-top-prizes": "https://www.theprizefinder.com/feeds/top-prizes",
-    "theprizefinder-closing-soon": "https://www.theprizefinder.com/feeds/closing-soon",
+    "theprizefinder-new": "http://www.theprizefinder.com/feed/new-competitions",
+    "theprizefinder-top-prizes": "http://www.theprizefinder.com/feed/top-prizes",
+    "theprizefinder-closing-soon": "http://www.theprizefinder.com/feed/closing-soon",
 }
 
 
@@ -63,7 +61,12 @@ class RssSource:
         self.timeout = timeout
 
     def fetch(self) -> Iterable[RawListing]:
-        response = httpx.get(self.url, timeout=self.timeout, headers={"User-Agent": USER_AGENT})
+        response = httpx.get(
+            self.url,
+            timeout=self.timeout,
+            headers={"User-Agent": USER_AGENT},
+            follow_redirects=True,
+        )
         response.raise_for_status()
         return parse_feed(response.content, self.name)
 
