@@ -1,0 +1,40 @@
+# Copy to `profile.toml` and fill in. NEVER commit profile.toml — it is
+# gitignored, and the entry layer is the only thing that reads it.
+#
+# Everything here must be TRUTHFUL and match the ID you would produce at
+# prize-claim time. Entering under a name that doesn't match your ID loses the
+# prize at the last hurdle and is the difference between breaching a T&C and
+# defrauding a promoter.
+
+[identity]
+title       = "Mr"          # Mr | Mrs | Ms | Mx | Dr — forms often use a select
+first_name  = ""
+last_name   = ""
+dob         = "1990-01-31"  # ISO; the autofill layer splits it for d/m/y selects
+
+[contact]
+email  = ""                 # the dedicated comping address
+phone  = ""                 # UK mobile, 07… — some comps SMS the win notice
+
+[address]
+line1    = ""
+line2    = ""               # optional
+town     = ""
+county    = ""              # optional; many forms still require it
+postcode = ""
+country  = "United Kingdom"
+
+[consent]
+# Defaults are deliberate. Opting out at entry time is the single most
+# effective way to keep both the inbox and the letterbox clean — far more so
+# than a separate postal address. Set true only if you want the mail.
+marketing       = false     # promoter's own marketing
+third_party     = false     # sale/sharing to partners — always leave false
+terms_accepted  = true      # required to enter at all; must be ticked
+
+[limits]
+# Politeness + not looking like a bot. See docs/design-options.md §9.
+max_entries_per_run       = 40
+max_entries_per_domain    = 1
+min_delay_seconds         = 20
+max_delay_seconds         = 90

@@ -30,7 +30,7 @@ competition_hunter/
   ingest/
     base.py          # Source protocol: fetch() -> Iterable[RawListing]
     rss.py           # ThePrizeFinder feeds
-    newsletter.py    # Gmail -> parsed listings  (phase 2)
+    newsletter.py    # Gmail (OAuth2, readonly) -> listings  (phase 4)
     scrape/          # per-site adapters         (phase 4)
   pipeline/
     normalise.py     # RawListing -> Competition
@@ -120,6 +120,14 @@ The manual queue surfaces as a dashboard section with deep links. Detect
 CAPTCHAs by presence of the usual containers/iframes and abort that entry — do
 not attempt to solve, and do not fall back to a solving service.
 
+**Consent boxes are part of the contract, not a detail.** The autofill layer
+must read `[consent]` from `profile.toml` and act on it: tick `terms_accepted`
+(no entry without it), and explicitly *untick* marketing and third-party
+sharing unless the profile opts in. Where a form makes marketing consent
+mandatory to enter, that comp goes to the manual queue rather than silently
+opting the user in. This is the project's actual answer to junk mail — see
+`setup-accounts.md` §2.
+
 `fieldmap.py` is the interesting part. Don't write per-site selectors: pass the
 form's DOM to a Sonnet-class model and have it return a
 `{profile_key: css_selector}` mapping, then cache that per domain in SQLite so
@@ -138,6 +146,17 @@ between entries, honest User-Agent. Log every attempt to `EntryAttempt`.
 2. **Enrich + score + entry tracker.** Where it starts beating doing it by hand.
 3. **Entry layer** — router, autofill, field mapping. Local only.
 4. **Newsletter ingest, selective scrapers, wins ledger + per-source hit rate.**
+
+## Gmail ingest auth (phase 4)
+
+Use **OAuth 2.0, not IMAP + app password** — Google is phasing app passwords
+out through 2026. Desktop-app OAuth client, scope `gmail.readonly`,
+`credentials.json` + `token.json` in the repo root, both gitignored.
+
+The OAuth app's publishing status must be **In production**, not Testing:
+refresh tokens for apps in Testing expire after 7 days, which kills an
+unattended pipeline weekly with a misleading auth error. Setup steps are in
+[`setup-accounts.md`](setup-accounts.md) §1.
 
 ## Testing
 
