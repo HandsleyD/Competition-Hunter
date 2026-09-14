@@ -16,15 +16,21 @@ FIXTURES = Path(__file__).parent / "fixtures" / "forms"
 
 @pytest.fixture(autouse=True)
 def _fallback_browser_executable(monkeypatch):
-    """This sandbox's pre-installed Chromium build doesn't always match the
-    exact playwright version `uv add` resolves — fall back to the pinned
-    binary only when the caller didn't already specify one. Never touches
-    entry/run.py itself, which always launches plain `headless=True`."""
+    """Some sandboxes' pre-installed Chromium build doesn't match the exact
+    playwright version `uv add` resolves, and needs a pinned binary path —
+    but a normal CI runner's own `playwright install`ed browser is at the
+    default location, so only fall back to the pinned path if the plain
+    launch actually fails. Never touches entry/run.py itself, which always
+    launches plain `headless=True`."""
     original_launch = pw_api.BrowserType.launch
 
     def patched_launch(self, **kwargs):
-        kwargs.setdefault("executable_path", "/opt/pw-browsers/chromium")
-        return original_launch(self, **kwargs)
+        if "executable_path" in kwargs:
+            return original_launch(self, **kwargs)
+        try:
+            return original_launch(self, **kwargs)
+        except pw_api.Error:
+            return original_launch(self, executable_path="/opt/pw-browsers/chromium", **kwargs)
 
     monkeypatch.setattr(pw_api.BrowserType, "launch", patched_launch)
 
