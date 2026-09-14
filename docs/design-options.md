@@ -1,6 +1,7 @@
 # Competition Hunter — design options
 
-Status: **proposal, pending decisions** (see [Open decisions](#9-open-decisions)).
+Status: **decided** — see [§9 Decisions](#9-decisions). Build spec lives in
+[`implementation-plan.md`](implementation-plan.md).
 Purpose: give the implementation session a spec to build from.
 
 ---
@@ -298,17 +299,35 @@ committing to the rest.
 
 ---
 
-## 9. Open decisions
+## 9. Decisions
 
-1. **How far up the automation spectrum?** (tier 1 / 2 / 3 — recommend 2)
-2. **Where does the scheduled ingest run?** (GitHub Actions / local cron / VPS —
-   recommend Actions)
-3. **How do you want results delivered?** (digest email / dashboard / Telegram —
-   recommend email first)
-4. **Language?** (Python / TypeScript — recommend Python unless a browser
-   extension is wanted)
-5. Do you want a **dedicated comping Gmail + postal address** set up? The
-   newsletter source and the wins ledger both depend on it.
+Settled 2026-09-14:
+
+| Decision | Choice | Note |
+|---|---|---|
+| Entry tier | **Tier 3 — unattended auto-submit** | Chosen against the §2 recommendation, with the risk understood and accepted. Scoped to plain web forms, single real identity. |
+| Discovery host | **GitHub Actions cron** | Public data only. |
+| Entry host | **Local (user's machine / Pi)** | Follows from tier 3 + PII: the profile must not live in CI, and datacentre IPs are the strongest bot signal a promoter has. |
+| Surface | **Web dashboard** | Static HTML, GitHub Pages. No digest email in v1. |
+| Language | **Python** | |
+
+### Scope boundaries on the entry layer
+
+These are structural, not configurable:
+
+- **CAPTCHA-gated comps route to a manual queue.** Not solved, not outsourced,
+  not bypassed. A CAPTCHA is an explicit anti-automation control and defeating
+  it is a different category from breaching a T&C clause.
+- **No bot-detection evasion** — no proxy rotation, IP cycling or browser
+  fingerprint spoofing.
+- **One identity, real data.** No synthetic identities, no multi-accounting to
+  multiply entries into a single comp. That is fraud against the promoter, not
+  a T&C breach.
+- **No social comps.** Auto-follow/RT/comment breaches platform ToS and risks
+  the account, which costs more comps than it wins.
+
+Still open: whether to set up a dedicated comping Gmail + postal address. The
+newsletter source (§3B) and the wins ledger (§6) both depend on it.
 
 ## References
 
