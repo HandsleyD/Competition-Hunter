@@ -17,6 +17,11 @@ jobs:
 
       - run: uv sync --locked
 
+      # The autofill/entry tests drive a real headless Chromium against
+      # local HTML fixtures — no live network — so CI needs the actual
+      # browser binary, not just the playwright pip package.
+      - run: uv run playwright install --with-deps chromium
+
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest -q
