@@ -15,7 +15,7 @@ EntryMechanic = Literal[
     "web_form", "gleam", "viralsweep", "rafflecopter", "social", "email", "postal", "unknown"
 ]
 RepeatInterval = Literal["once", "daily", "weekly", "monthly"]
-EntryOutcome = Literal["submitted", "queued_manual", "failed", "skipped"]
+EntryOutcome = Literal["submitted", "queued_manual", "failed", "skipped", "dry_run"]
 
 
 class RawListing(BaseModel):

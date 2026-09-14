@@ -10,6 +10,7 @@ rate-limit pacing that lives there.
 from __future__ import annotations
 
 import logging
+import os
 
 from google import genai
 from google.genai import errors, types
@@ -74,3 +75,14 @@ class GeminiClient:
                     )
                     continue
                 raise
+
+
+def make_client_from_env() -> GeminiClient | None:
+    """Shared by `cli.py` (discovery/enrichment) and `entry/run.py` (local
+    field-mapping) — both need the same env-var check and graceful-skip
+    behaviour when no key is configured."""
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        logger.warning("GEMINI_API_KEY not set — skipping LLM-dependent work this run")
+        return None
+    return GeminiClient(api_key=api_key)
