@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>ThePrizeFinder - Closing Soon</title>
+    <link>https://www.theprizefinder.com/</link>
+    <description>UK competitions closing in the next 3 days</description>
+    <item>
+      <title>Win a Family Trip to Lapland</title>
+      <link>https://www.theprizefinder.com/out/lapland-trip?utm_source=closing-soon&amp;ref=affiliate123</link>
+      <description>Enter for a chance to win a magical family trip to Lapland worth £3,000.</description>
+      <pubDate>Wed, 09 Sep 2026 08:00:00 GMT</pubDate>
+      <guid>https://www.theprizefinder.com/out/lapland-trip-cs</guid>
+    </item>
+    <item>
+      <title>Win a Home Cinema System</title>
+      <link>https://www.theprizefinder.com/out/home-cinema?utm_source=closing-soon</link>
+      <description>Closing in 2 days - win a full home cinema setup.</description>
+      <pubDate>Wed, 09 Sep 2026 08:15:00 GMT</pubDate>
+      <guid>https://www.theprizefinder.com/out/home-cinema</guid>
+    </item>
+  </channel>
+</rss>

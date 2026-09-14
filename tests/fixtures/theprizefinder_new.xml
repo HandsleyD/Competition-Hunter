@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>ThePrizeFinder - New Competitions</title>
+    <link>https://www.theprizefinder.com/</link>
+    <description>Newest UK competitions</description>
+    <item>
+      <title>Win a Family Trip to Lapland</title>
+      <link>https://www.theprizefinder.com/out/lapland-trip?utm_source=feed&amp;utm_medium=rss</link>
+      <description>Enter for a chance to win a magical family trip to Lapland worth £3,000.</description>
+      <pubDate>Mon, 07 Sep 2026 09:00:00 GMT</pubDate>
+      <guid>https://www.theprizefinder.com/out/lapland-trip</guid>
+    </item>
+    <item>
+      <title>Win a Year's Supply of Coffee</title>
+      <link>https://www.theprizefinder.com/out/coffee-year?utm_source=feed&amp;utm_medium=rss</link>
+      <description>A daily-entry giveaway from a UK coffee roaster.</description>
+      <pubDate>Tue, 08 Sep 2026 10:30:00 GMT</pubDate>
+      <guid>https://www.theprizefinder.com/out/coffee-year</guid>
+    </item>
+  </channel>
+</rss>

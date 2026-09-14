@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Competition Hunter</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; }
+  h1 { margin-bottom: 0.25rem; }
+  .meta { color: #666; margin-bottom: 1.5rem; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #ddd; }
+  th { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.02em; }
+  tr:hover { background: rgba(127, 127, 127, 0.08); }
+  .closing-soon { color: #c00; font-weight: 600; }
+  .source-count { color: #666; font-size: 0.85rem; }
+  a { color: inherit; }
+  .empty { color: #666; font-style: italic; }
+</style>
+</head>
+<body>
+  <h1>Competition Hunter</h1>
+  <p class="meta">{{ competitions | length }} open competitions &middot; built {{ generated_at }}</p>
+  {% if competitions %}
+  <table>
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Closes</th>
+        <th>Sources</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in competitions %}
+      <tr>
+        <td><a href="{{ c.canonical_url }}" target="_blank" rel="noopener">{{ c.title }}</a></td>
+        <td class="{{ 'closing-soon' if c.closing_soon else '' }}">{{ c.closes_at or '—' }}</td>
+        <td class="source-count">{{ c.source_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No competitions ingested yet.</p>
+  {% endif %}
+</body>
+</html>
