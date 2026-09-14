@@ -30,13 +30,20 @@ jobs:
       # The SQLite DB persists across runs via cache rather than being
       # committed to the repo (design-options.md §4). Always re-save under a
       # fresh key so a partial/failed run never clobbers accumulated data.
+      #
+      # Prefix bumped to v2 to force a one-time fresh rebuild: a dedupe gap
+      # (ThePrizeFinder's "-0"/"-1" slug-collision suffixes weren't
+      # canonicalized away) let duplicate rows into every cached DB up to
+      # this point. The fix means it won't happen again, but doesn't
+      # retroactively merge rows that already exist under two different
+      # ids — cheaper to just re-ingest from the live feeds than migrate.
       - name: Restore competitions database
         uses: actions/cache/restore@v4
         with:
           path: competitions.db
-          key: competitions-db-${{ github.run_id }}
+          key: competitions-db-v2-${{ github.run_id }}
           restore-keys: |
-            competitions-db-
+            competitions-db-v2-
 
       - run: uv sync --locked
 
@@ -52,7 +59,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: competitions.db
-          key: competitions-db-${{ github.run_id }}
+          key: competitions-db-v2-${{ github.run_id }}
 
       - uses: actions/upload-pages-artifact@v3
         with:
