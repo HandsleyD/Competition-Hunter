@@ -1,0 +1,64 @@
+name: Discover
+
+# Discovery + triage trust zone (docs/implementation-plan.md): public
+# competition data only. Never checkout or use profile.toml here — the entry
+# layer stays on the user's own machine.
+on:
+  schedule:
+    - cron: "0 */6 * * *" # ~4x/day
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+
+      # The SQLite DB persists across runs via cache rather than being
+      # committed to the repo (design-options.md §4). Always re-save under a
+      # fresh key so a partial/failed run never clobbers accumulated data.
+      - name: Restore competitions database
+        uses: actions/cache/restore@v4
+        with:
+          path: competitions.db
+          key: competitions-db-${{ github.run_id }}
+          restore-keys: |
+            competitions-db-
+
+      - run: uv sync --locked
+
+      - run: uv run competition-hunter --db competitions.db --out dashboard/out
+
+      - name: Save competitions database
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: competitions.db
+          key: competitions-db-${{ github.run_id }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dashboard/out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

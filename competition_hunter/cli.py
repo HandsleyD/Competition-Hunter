@@ -1,0 +1,70 @@
+"""Phase 1 pipeline: RSS ingest -> SQLite -> dedupe -> dashboard.
+
+    uv run competition-hunter [--db PATH] [--out DIR]
+
+This is what .github/workflows/discover.yml runs on a schedule. It only ever
+touches public data — the trust split in docs/implementation-plan.md keeps
+profile.toml and the entry layer off this path entirely.
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+
+from competition_hunter import store
+from competition_hunter.dashboard.build import build as build_dashboard
+from competition_hunter.ingest.rss import default_sources
+from competition_hunter.pipeline.normalise import normalise_and_dedupe
+
+logger = logging.getLogger("competition_hunter")
+
+
+def run(db_path: str, output_dir: str, *, resolve_redirects: bool = True) -> int:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+    listings = []
+    for source in default_sources():
+        try:
+            fetched = list(source.fetch())
+        except Exception:
+            logger.exception("source %s failed, skipping", source.name)
+            continue
+        logger.info("%s: %d listings", source.name, len(fetched))
+        listings.extend(fetched)
+
+    competitions = normalise_and_dedupe(listings, resolve_redirects=resolve_redirects)
+    logger.info("%d listings deduped to %d competitions", len(listings), len(competitions))
+
+    conn = store.connect(db_path)
+    try:
+        stored = store.upsert_all(conn, competitions)
+        all_open = store.get_competitions(conn)
+    finally:
+        conn.close()
+
+    index_path = build_dashboard(all_open, output_dir)
+    logger.info(
+        "dashboard written to %s (%d new/updated of %d total)",
+        index_path,
+        len(stored),
+        len(all_open),
+    )
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Competition Hunter — discovery and triage")
+    parser.add_argument("--db", default="competitions.db", help="SQLite database path")
+    parser.add_argument("--out", default="dashboard/out", help="Dashboard output directory")
+    parser.add_argument(
+        "--no-resolve-redirects",
+        action="store_true",
+        help="Skip following redirects when canonicalizing URLs (faster, less accurate)",
+    )
+    args = parser.parse_args()
+    return run(args.db, args.out, resolve_redirects=not args.no_resolve_redirects)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
