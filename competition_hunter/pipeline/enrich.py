@@ -4,18 +4,25 @@ design-options.md §5: reading free text and pulling out prize value, closing
 date, restrictions and entry mechanic generalises far better than regex, and
 it's cheap at this volume (a few hundred items a day) on a small/fast model.
 Currently backed by Gemini (`competition_hunter/llm.py`) rather than
-Anthropic, chosen for its no-payment-method free tier.
+Anthropic, chosen for its no-payment-method free tier — which comes with a
+real per-minute rate limit. A live run against a 1,248-item backlog hit a
+429 on the 17th call fired back-to-back; REQUEST_INTERVAL_SECONDS paces
+calls to stay under that, and `enrich_all` stops the batch (rather than
+raising and losing everything already done) the moment a call fails for any
+reason other than a malformed response, so whatever succeeded is still
+persisted and the rest waits for the next scheduled run.
 
 "Cache by competition_id, never re-enrich" (implementation-plan.md): the
 caller is expected to run this only over `store.get_unenriched(conn)` and
 persist every result — success or not — via `store.mark_enriched`, so a
-competition is never sent to the LLM twice.
+competition already enriched is never sent to the LLM again.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Iterable
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -26,6 +33,10 @@ from pydantic import BaseModel, ValidationError
 from competition_hunter.models import Competition, EntryMechanic, RepeatInterval
 
 logger = logging.getLogger(__name__)
+
+# ~12 requests/minute — comfortably under the free tier's limit (observed
+# failure at the 17th call fired with no pacing at all).
+REQUEST_INTERVAL_SECONDS = 5.0
 
 SYSTEM_PROMPT = """\
 You extract structured facts about a UK prize competition from its listing \
@@ -109,11 +120,29 @@ def apply_extraction(competition: Competition, extraction: Extraction) -> Compet
 
 
 def enrich_all(client: LLMClient, competitions: Iterable[Competition]) -> list[Competition]:
-    """Run one enrichment call per competition. Always returns one output per
-    input (unenriched competitions pass through unchanged on a parse failure)
-    so the caller can `mark_enriched` every one of them regardless."""
+    """Run one enrichment call per competition, paced to stay under the free
+    tier's rate limit.
+
+    A malformed response (`extract` returns None) just passes the
+    competition through unchanged — that's a normal, expected outcome.
+    Anything else `extract` raises (a 429, a timeout, ...) means the API
+    itself is unhappy and every subsequent call will likely fail the same
+    way, so the batch stops there rather than burning through the rest of
+    the backlog on certain failures. Either way, only the competitions
+    already processed are returned; the caller (`cli.run`) marks exactly
+    those as enriched, and whatever's left stays unenriched for the next
+    scheduled run to pick up.
+    """
     results = []
-    for competition in competitions:
-        extraction = extract(client, competition.title, competition.description)
+    for i, competition in enumerate(competitions):
+        if i > 0:
+            time.sleep(REQUEST_INTERVAL_SECONDS)
+        try:
+            extraction = extract(client, competition.title, competition.description)
+        except Exception:
+            logger.warning(
+                "enrichment: API call failed, stopping this batch early (%d done)", len(results)
+            )
+            break
         results.append(apply_extraction(competition, extraction) if extraction else competition)
     return results
