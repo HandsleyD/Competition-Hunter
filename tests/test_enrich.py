@@ -1,5 +1,4 @@
 import json
-from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -7,29 +6,14 @@ from competition_hunter.pipeline.enrich import apply_extraction, enrich_all, ext
 from tests.factories import competition
 
 
-@dataclass
-class _TextBlock:
-    text: str
-
-
-@dataclass
-class _Message:
-    content: list
-
-
-class _FakeMessagesAPI:
-    def __init__(self, response_text: str):
-        self._response_text = response_text
-        self.last_kwargs: dict | None = None
-
-    def create(self, **kwargs):
-        self.last_kwargs = kwargs
-        return _Message(content=[_TextBlock(text=self._response_text)])
-
-
 class _FakeClient:
     def __init__(self, response_text: str):
-        self.messages = _FakeMessagesAPI(response_text)
+        self._response_text = response_text
+        self.last_call: dict | None = None
+
+    def generate(self, *, system: str, prompt: str) -> str:
+        self.last_call = {"system": system, "prompt": prompt}
+        return self._response_text
 
 
 VALID_PAYLOAD = {
@@ -62,9 +46,8 @@ def test_extract_passes_title_and_description_to_the_model():
 
     extract(client, title="Win a Prize", description="Some details here.")
 
-    content = client.messages.last_kwargs["messages"][0]["content"]
-    assert "Win a Prize" in content
-    assert "Some details here." in content
+    assert "Win a Prize" in client.last_call["prompt"]
+    assert "Some details here." in client.last_call["prompt"]
 
 
 def test_extract_returns_none_on_invalid_json():

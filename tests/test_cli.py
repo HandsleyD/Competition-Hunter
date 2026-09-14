@@ -1,5 +1,4 @@
 import json
-from dataclasses import dataclass
 
 import pytest
 
@@ -11,7 +10,7 @@ from tests.factories import raw_listing
 def _no_llm_key_by_default(monkeypatch):
     # Enrichment must never fire in a test unless the test explicitly wants
     # it — otherwise a missing monkeypatch would try to hit the real API.
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
 
 class _FakeSource:
@@ -96,31 +95,16 @@ def test_run_skips_enrichment_without_api_key(tmp_path, monkeypatch):
         conn.close()
 
 
-@dataclass
-class _FakeTextBlock:
-    text: str
-
-
-@dataclass
-class _FakeMessage:
-    content: list
-
-
-class _FakeMessagesAPI:
+class _FakeGeminiClient:
     def __init__(self, payload: dict):
         self._payload = payload
 
-    def create(self, **kwargs):
-        return _FakeMessage(content=[_FakeTextBlock(text=json.dumps(self._payload))])
-
-
-class _FakeAnthropicClient:
-    def __init__(self, payload: dict):
-        self.messages = _FakeMessagesAPI(payload)
+    def generate(self, *, system: str, prompt: str) -> str:
+        return json.dumps(self._payload)
 
 
 def test_run_enriches_and_scores_when_api_key_present(tmp_path, monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     monkeypatch.setattr(
         cli,
         "default_sources",
@@ -148,7 +132,7 @@ def test_run_enriches_and_scores_when_api_key_present(tmp_path, monkeypatch):
         "min_age": 18,
         "repeat_interval": None,
     }
-    monkeypatch.setattr(cli.anthropic, "Anthropic", lambda: _FakeAnthropicClient(payload))
+    monkeypatch.setattr(cli, "GeminiClient", lambda api_key: _FakeGeminiClient(payload))
 
     db_path = tmp_path / "competitions.db"
     out_dir = tmp_path / "out"

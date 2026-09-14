@@ -2,7 +2,9 @@
 
 design-options.md §5: reading free text and pulling out prize value, closing
 date, restrictions and entry mechanic generalises far better than regex, and
-it's cheap at this volume (a few hundred items a day) on a Haiku-class model.
+it's cheap at this volume (a few hundred items a day) on a small/fast model.
+Currently backed by Gemini (`competition_hunter/llm.py`) rather than
+Anthropic, chosen for its no-payment-method free tier.
 
 "Cache by competition_id, never re-enrich" (implementation-plan.md): the
 caller is expected to run this only over `store.get_unenriched(conn)` and
@@ -17,16 +19,13 @@ import logging
 from collections.abc import Iterable
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Protocol
 
 from pydantic import BaseModel, ValidationError
 
 from competition_hunter.models import Competition, EntryMechanic, RepeatInterval
 
 logger = logging.getLogger(__name__)
-
-MODEL = "claude-haiku-4-5-20251001"
-MAX_TOKENS = 400
 
 SYSTEM_PROMPT = """\
 You extract structured facts about a UK prize competition from its listing \
@@ -62,15 +61,12 @@ class Extraction(BaseModel):
     repeat_interval: RepeatInterval | None = None
 
 
-class _MessagesAPI(Protocol):
-    def create(self, **kwargs: Any) -> Any: ...
-
-
 class LLMClient(Protocol):
-    """The slice of the Anthropic SDK client this module needs — a Protocol
-    rather than `anthropic.Anthropic` so tests can pass a stub."""
+    """Whatever provider is behind enrichment just needs to answer a prompt
+    with text back — a Protocol so tests can pass a stub and swapping the
+    provider (see `competition_hunter/llm.py`) never touches this module."""
 
-    messages: _MessagesAPI
+    def generate(self, *, system: str, prompt: str) -> str: ...
 
 
 def extract(client: LLMClient, title: str, description: str) -> Extraction | None:
@@ -78,15 +74,12 @@ def extract(client: LLMClient, title: str, description: str) -> Extraction | Non
     rather than raising, so one bad extraction never sinks a whole run — the
     competition is simply left unenriched for `mark_enriched` to record."""
     try:
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=MAX_TOKENS,
+        text = client.generate(
             system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": f"Title: {title}\n\nDescription: {description}"}],
+            prompt=f"Title: {title}\n\nDescription: {description}",
         )
-        text = response.content[0].text
         return Extraction.model_validate(json.loads(text))
-    except (json.JSONDecodeError, ValidationError, IndexError, AttributeError) as exc:
+    except (json.JSONDecodeError, ValidationError) as exc:
         logger.warning("enrichment: could not parse a response for %r: %s", title, exc)
         return None
 
