@@ -11,9 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Python version comes from .python-version — setup-uv has no
+      # python-version input of its own (that "version" input pins uv itself).
       - uses: astral-sh/setup-uv@v3
-        with:
-          python-version: "3.12"
 
       - run: uv sync --locked
 
