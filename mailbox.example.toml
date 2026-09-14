@@ -1,0 +1,21 @@
+# Copy to `mailbox.toml` and fill in. NEVER commit mailbox.toml — it holds a
+# real IMAP password. Only competition_hunter/wins/ reads it, and it never
+# runs in CI.
+#
+# Use a dedicated inbox, not your everyday one — the same address the
+# newsletter ingest (a later addition) would also feed into.
+#
+# Yahoo Mail: Account Info -> Account Security -> "Generate app password".
+# Your normal Yahoo password won't work over IMAP once 2-step verification
+# is on — you need the generated app password specifically. iCloud Mail and
+# Zoho Mail have the equivalent "app-specific password" setting if you'd
+# rather use one of those instead.
+
+[imap]
+host         = "imap.mail.yahoo.com"
+port         = 993
+email        = ""   # the dedicated comping address
+app_password = ""   # the generated app password, not your normal login password
+
+[wins]
+since_days = 30   # how far back to look for win notifications on a fresh run

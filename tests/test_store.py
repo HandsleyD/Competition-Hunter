@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 
 from competition_hunter import store
-from competition_hunter.models import Competition, EntryAttempt
+from competition_hunter.models import Competition, EntryAttempt, Win
 
 
 @pytest.fixture
@@ -219,3 +219,80 @@ def test_set_field_map_overwrites_an_existing_mapping_for_the_same_domain(conn):
     store.set_field_map(conn, "example.com", {"email": "#new"})
 
     assert store.get_field_map(conn, "example.com") == {"email": "#new"}
+
+
+def _win(**overrides) -> Win:
+    defaults = dict(
+        message_id="<msg-1@example.com>",
+        received_at=datetime(2026, 1, 2, tzinfo=UTC),
+        subject="You won!",
+        sender="promoter@example.com",
+        is_win=True,
+        created_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+    defaults.update(overrides)
+    return Win(**defaults)
+
+
+def test_has_processed_email_is_false_until_recorded(conn):
+    assert store.has_processed_email(conn, "<msg-1@example.com>") is False
+
+    store.record_win(conn, _win())
+
+    assert store.has_processed_email(conn, "<msg-1@example.com>") is True
+
+
+def test_record_win_is_idempotent_on_message_id(conn):
+    store.record_win(conn, _win(competition_id=None))
+    store.record_win(conn, _win(subject="a different subject entirely"))
+
+    row = conn.execute(
+        "SELECT subject FROM wins WHERE message_id = ?", ("<msg-1@example.com>",)
+    ).fetchone()
+    assert row["subject"] == "You won!"
+
+
+def test_get_wins_excludes_non_win_emails(conn):
+    store.record_win(conn, _win(message_id="<win@example.com>", is_win=True))
+    store.record_win(conn, _win(message_id="<newsletter@example.com>", is_win=False))
+
+    wins = store.get_wins(conn)
+
+    assert [w.message_id for w in wins] == ["<win@example.com>"]
+
+
+def test_get_entered_competitions_only_returns_submitted_ones(conn):
+    store.upsert_competition(conn, _competition(id="entered"))
+    store.upsert_competition(
+        conn, _competition(id="not-entered", canonical_url="https://example.com/other")
+    )
+    store.record_entry_attempt(
+        conn,
+        EntryAttempt(competition_id="entered", attempted_at=datetime.now(UTC), outcome="submitted"),
+    )
+
+    entered = store.get_entered_competitions(conn)
+
+    assert [c.id for c in entered] == ["entered"]
+
+
+def test_hit_rate_by_score_band_counts_entered_and_won_per_band(conn):
+    store.upsert_competition(conn, _competition(id="low", score=0.5))
+    store.upsert_competition(
+        conn, _competition(id="high", canonical_url="https://example.com/high", score=15.0)
+    )
+    for comp_id in ("low", "high"):
+        store.record_entry_attempt(
+            conn,
+            EntryAttempt(
+                competition_id=comp_id, attempted_at=datetime.now(UTC), outcome="submitted"
+            ),
+        )
+    store.record_win(conn, _win(message_id="<w1@example.com>", competition_id="high", is_win=True))
+
+    bands = store.hit_rate_by_score_band(conn, [(0.0, 1.0), (1.0, 20.0)])
+
+    assert bands == [
+        {"band": (0.0, 1.0), "entered": 1, "won": 0},
+        {"band": (1.0, 20.0), "entered": 1, "won": 1},
+    ]

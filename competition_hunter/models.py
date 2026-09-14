@@ -70,6 +70,32 @@ class Limits(BaseModel):
     max_delay_seconds: int = 90
 
 
+class EmailMessage(BaseModel):
+    """A single email as fetched from the wins-ledger mailbox, before
+    classification. See competition_hunter/wins/mailbox.py."""
+
+    message_id: str
+    received_at: datetime
+    subject: str
+    sender: str
+    body_text: str = ""
+
+
+class Win(BaseModel):
+    """One classified email, win or not — doubles as the dedupe ledger so
+    the same email is never reprocessed. See competition_hunter/wins/."""
+
+    message_id: str
+    received_at: datetime
+    subject: str
+    sender: str
+    is_win: bool
+    competition_id: str | None = None
+    prize_description: str = ""
+    confidence: float = 0.0
+    created_at: datetime
+
+
 class Profile(BaseModel):
     """Loaded from profile.toml — never enters the repo, CI, or a log line."""
 

@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from competition_hunter.models import Competition, Profile, RawListing
+from competition_hunter.models import Competition, EmailMessage, Profile, RawListing
 
 
 def raw_listing(
@@ -32,6 +32,18 @@ def competition(**overrides) -> Competition:
     )
     defaults.update(overrides)
     return Competition(**defaults)
+
+
+def email_message(**overrides) -> EmailMessage:
+    defaults = dict(
+        message_id="<msg-1@example.com>",
+        received_at=datetime(2026, 1, 2, tzinfo=UTC),
+        subject="Test subject",
+        sender="promoter@example.com",
+        body_text="Test body",
+    )
+    defaults.update(overrides)
+    return EmailMessage(**defaults)
 
 
 def profile(**overrides) -> Profile:
