@@ -11,11 +11,10 @@ from __future__ import annotations
 from google import genai
 from google.genai import types
 
-# "-latest" aliases to Google's current recommended Flash model rather than
-# pinning an exact dated version, which Google renames/deprecates over time.
-# Verify against https://ai.google.dev/gemini-api/docs/models if this project
-# ever needs to pin an exact version instead.
-MODEL = "gemini-flash-latest"
+# Pinned per the project owner's choice. Verify against
+# https://ai.google.dev/gemini-api/docs/models if this project ever needs to
+# change model or the name gets renamed/deprecated upstream.
+MODEL = "gemini-3.5-flash-lite"
 
 
 class GeminiClient:
