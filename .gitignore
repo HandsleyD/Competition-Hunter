@@ -1,0 +1,20 @@
+# Secrets and PII — never commit
+profile.toml
+credentials.json
+token.json
+.env
+
+# Data
+*.db
+*.db-journal
+*.db-wal
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Build output
+dashboard/out/
