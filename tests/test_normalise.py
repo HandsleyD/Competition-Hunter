@@ -39,3 +39,26 @@ def test_keeps_distinct_competitions_separate():
 
     assert {c.title for c in competitions} == {"A", "B"}
     assert all(c.source_count == 1 for c in competitions)
+
+
+def test_carries_description_through_for_enrichment():
+    listings = [raw_listing(link="https://example.com/comp", description="Win a shiny thing.")]
+
+    [comp] = normalise_and_dedupe(listings, resolve_redirects=False)
+
+    assert comp.description == "Win a shiny thing."
+
+
+def test_picks_first_non_empty_description_when_merging():
+    listings = [
+        raw_listing(source_name="a", link="https://example.com/comp?utm_source=a", description=""),
+        raw_listing(
+            source_name="b",
+            link="https://example.com/comp?utm_source=b",
+            description="Full details here.",
+        ),
+    ]
+
+    [comp] = normalise_and_dedupe(listings, resolve_redirects=False)
+
+    assert comp.description == "Full details here."

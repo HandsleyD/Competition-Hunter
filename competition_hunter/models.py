@@ -35,6 +35,8 @@ class Competition(BaseModel):
     source_urls: list[str] = Field(default_factory=list)
     source_count: int = 0  # negative ranking signal — see design §5
     title: str
+    description: str = ""  # kept for enrichment; not shown on the dashboard
+    enriched: bool = False  # LLM extraction attempted — never re-enrich, see pipeline/enrich.py
     promoter: str | None = None
     prize_value_gbp: Decimal | None = None
     closes_at: datetime | None = None

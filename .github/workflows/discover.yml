@@ -40,7 +40,12 @@ jobs:
 
       - run: uv sync --locked
 
+      # ANTHROPIC_API_KEY is just an API credential, not personal data — it's
+      # fine in this trust zone. If it's unset, the run still completes and
+      # simply leaves new competitions unenriched (competition_hunter/cli.py).
       - run: uv run competition-hunter --db competitions.db --out dashboard/out
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Save competitions database
         if: always()
