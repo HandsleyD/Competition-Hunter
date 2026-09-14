@@ -7,6 +7,7 @@ from competition_hunter.pipeline.dedupe import (
     competition_id,
     group_by_canonical,
     resolve_redirect,
+    strip_slug_suffix,
     strip_tracking_params,
 )
 from tests.factories import raw_listing
@@ -35,6 +36,32 @@ def test_canonicalize_url_without_redirect_resolution():
     assert canonicalize_url(url, resolve_redirects=False) == "https://example.com/comp"
 
 
+def test_strip_slug_suffix_removes_a_trailing_numeric_disambiguator():
+    # Real example: ThePrizeFinder lists the same competition twice under
+    # .../win-sleep-well-hamper-worth-over-ps260 and .../...-ps260-0.
+    url = "https://www.theprizefinder.com/competitions/win-sleep-well-hamper-worth-over-ps260-0"
+
+    assert (
+        strip_slug_suffix(url)
+        == "https://www.theprizefinder.com/competitions/win-sleep-well-hamper-worth-over-ps260"
+    )
+
+
+def test_strip_slug_suffix_leaves_a_slug_with_no_numeric_suffix_alone():
+    url = "https://www.theprizefinder.com/competitions/win-sleep-well-hamper-worth-over-ps260"
+
+    assert strip_slug_suffix(url) == url
+
+
+def test_canonicalize_url_collapses_the_real_duplicate_pair():
+    a = "https://www.theprizefinder.com/competitions/win-sleep-well-hamper-worth-over-ps260"
+    b = "https://www.theprizefinder.com/competitions/win-sleep-well-hamper-worth-over-ps260-0"
+
+    assert canonicalize_url(a, resolve_redirects=False) == canonicalize_url(
+        b, resolve_redirects=False
+    )
+
+
 def test_competition_id_is_stable_and_content_derived():
     a = competition_id("https://example.com/comp")
     b = competition_id("https://example.com/comp")
@@ -56,6 +83,24 @@ def test_group_by_canonical_merges_listings_with_same_canonical_url():
     assert set(groups) == {"https://example.com/comp", "https://example.com/other"}
     assert len(groups["https://example.com/comp"]) == 2
     assert len(groups["https://example.com/other"]) == 1
+
+
+def test_group_by_canonical_merges_a_slug_disambiguated_duplicate():
+    listings = [
+        raw_listing(
+            source_name="a",
+            link="https://www.theprizefinder.com/competitions/win-sleep-well-hamper-worth-over-ps260",
+        ),
+        raw_listing(
+            source_name="b",
+            link="https://www.theprizefinder.com/competitions/win-sleep-well-hamper-worth-over-ps260-0",
+        ),
+    ]
+
+    groups = group_by_canonical(listings, resolve_redirects=False)
+
+    assert len(groups) == 1
+    assert sum(len(v) for v in groups.values()) == 2
 
 
 def test_resolve_redirect_falls_back_to_original_url_on_network_error(monkeypatch):

@@ -3,15 +3,16 @@
 design-options.md §5: aggregators wrap the same competition in their own
 affiliate/tracking redirect, so the same comp shows up under several
 different URLs. The fix is: follow redirects to the true destination, strip
-tracking params, hash what's left. `source_count` (how many places listed a
-comp) is kept as a ranking signal, not discarded as noise — see
-`pipeline/normalise.py`, which merges the groups this module produces into
-`Competition` rows.
+tracking params and slug-collision suffixes, hash what's left. `source_count`
+(how many places listed a comp) is kept as a ranking signal, not discarded
+as noise — see `pipeline/normalise.py`, which merges the groups this module
+produces into `Competition` rows.
 """
 
 from __future__ import annotations
 
 import hashlib
+import re
 from collections import defaultdict
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
@@ -22,6 +23,13 @@ import httpx
 from competition_hunter.models import RawListing
 
 _TRACKING_PARAM_NAMES = {"ref", "fbclid", "gclid", "msclkid", "aff", "affiliate", "subid"}
+
+# ThePrizeFinder (and sites like it) append "-0", "-1", ... to a listing's
+# URL slug when two entries would otherwise generate an identical one - e.g.
+# a repeat-run competition re-listed under the same title. Confirmed on the
+# live site: .../win-sleep-well-hamper-worth-over-ps260 and the same
+# .../...-ps260-0 are the same competition, not two different ones.
+_SLUG_SUFFIX_RE = re.compile(r"-\d+$")
 
 # Redirect resolution is one HTTP request per listing, and a real feed run
 # can have hundreds of listings. A short per-request timeout and a bounded
@@ -44,6 +52,12 @@ def strip_tracking_params(url: str) -> str:
         if not _is_tracking_param(k)
     ]
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(kept), ""))
+
+
+def strip_slug_suffix(url: str) -> str:
+    parts = urlsplit(url)
+    path = _SLUG_SUFFIX_RE.sub("", parts.path)
+    return urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
 
 
 def resolve_redirect(url: str, client: httpx.Client | None = None) -> str:
@@ -70,7 +84,7 @@ def canonicalize_url(
     url: str, *, resolve_redirects: bool = True, client: httpx.Client | None = None
 ) -> str:
     resolved = resolve_redirect(url, client=client) if resolve_redirects else url
-    return strip_tracking_params(resolved)
+    return strip_slug_suffix(strip_tracking_params(resolved))
 
 
 def group_by_canonical(
@@ -87,7 +101,7 @@ def group_by_canonical(
             canonical_urls = list(
                 pool.map(lambda listing: resolve_redirect(listing.link, client=client), listings)
             )
-        canonical_urls = [strip_tracking_params(url) for url in canonical_urls]
+        canonical_urls = [strip_slug_suffix(strip_tracking_params(url)) for url in canonical_urls]
     else:
         canonical_urls = [
             canonicalize_url(listing.link, resolve_redirects=False) for listing in listings
