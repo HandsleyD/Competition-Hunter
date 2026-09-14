@@ -48,6 +48,12 @@ CREATE TABLE IF NOT EXISTS entry_attempts (
 
 CREATE INDEX IF NOT EXISTS idx_entry_attempts_comp_date
     ON entry_attempts (competition_id, date(attempted_at));
+
+CREATE TABLE IF NOT EXISTS field_maps (
+    domain      TEXT PRIMARY KEY,
+    mapping     TEXT NOT NULL,  -- JSON {profile_key: css_selector}
+    updated_at  TEXT NOT NULL
+);
 """
 
 
@@ -277,3 +283,34 @@ def repeatable_progress(conn: sqlite3.Connection, today: date | None = None) -> 
 
 def upsert_all(conn: sqlite3.Connection, competitions: Iterable[Competition]) -> list[Competition]:
     return [upsert_competition(conn, c) for c in competitions]
+
+
+def has_ever_entered(conn: sqlite3.Connection, competition_id: str) -> bool:
+    """Has this competition ever had a submitted entry, on any day?
+
+    For `repeat_interval` in {None, "once"} this is the guard against
+    entering the same one-shot competition twice; daily/weekly/monthly
+    repeatables use `entered_today` instead.
+    """
+    row = conn.execute(
+        "SELECT 1 FROM entry_attempts WHERE competition_id = ? AND outcome = 'submitted' LIMIT 1",
+        (competition_id,),
+    ).fetchone()
+    return row is not None
+
+
+def get_field_map(conn: sqlite3.Connection, domain: str) -> dict[str, str] | None:
+    row = conn.execute("SELECT mapping FROM field_maps WHERE domain = ?", (domain,)).fetchone()
+    return json.loads(row["mapping"]) if row else None
+
+
+def set_field_map(conn: sqlite3.Connection, domain: str, mapping: dict[str, str]) -> None:
+    conn.execute(
+        """
+        INSERT INTO field_maps (domain, mapping, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(domain) DO UPDATE SET
+            mapping = excluded.mapping, updated_at = excluded.updated_at
+        """,
+        (domain, json.dumps(mapping), datetime.now(UTC).isoformat()),
+    )
+    conn.commit()

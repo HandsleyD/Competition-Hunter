@@ -173,3 +173,49 @@ def test_repeatable_progress_counts_daily_comps_entered_today(conn):
     done, total = store.repeatable_progress(conn)
 
     assert (done, total) == (1, 2)
+
+
+def test_has_ever_entered_is_false_until_a_submitted_attempt_exists(conn):
+    store.upsert_competition(conn, _competition())
+
+    assert store.has_ever_entered(conn, "abc123") is False
+
+    store.record_entry_attempt(
+        conn,
+        EntryAttempt(competition_id="abc123", attempted_at=datetime.now(UTC), outcome="submitted"),
+    )
+
+    assert store.has_ever_entered(conn, "abc123") is True
+
+
+def test_has_ever_entered_ignores_non_submitted_outcomes(conn):
+    store.upsert_competition(conn, _competition())
+    store.record_entry_attempt(
+        conn,
+        EntryAttempt(
+            competition_id="abc123",
+            attempted_at=datetime.now(UTC),
+            outcome="failed",
+            reason="timeout",
+        ),
+    )
+
+    assert store.has_ever_entered(conn, "abc123") is False
+
+
+def test_field_map_round_trips_through_get_and_set(conn):
+    assert store.get_field_map(conn, "example.com") is None
+
+    store.set_field_map(conn, "example.com", {"email": "#email", "submit": "button[type=submit]"})
+
+    assert store.get_field_map(conn, "example.com") == {
+        "email": "#email",
+        "submit": "button[type=submit]",
+    }
+
+
+def test_set_field_map_overwrites_an_existing_mapping_for_the_same_domain(conn):
+    store.set_field_map(conn, "example.com", {"email": "#old"})
+    store.set_field_map(conn, "example.com", {"email": "#new"})
+
+    assert store.get_field_map(conn, "example.com") == {"email": "#new"}

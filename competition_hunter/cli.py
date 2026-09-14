@@ -18,25 +18,16 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 
 from competition_hunter import store
 from competition_hunter.dashboard.build import build as build_dashboard
 from competition_hunter.ingest.rss import default_sources
-from competition_hunter.llm import GeminiClient
+from competition_hunter.llm import make_client_from_env
 from competition_hunter.pipeline.enrich import enrich_all
 from competition_hunter.pipeline.normalise import normalise_and_dedupe
 from competition_hunter.pipeline.score import score_all
 
 logger = logging.getLogger("competition_hunter")
-
-
-def _make_llm_client() -> GeminiClient | None:
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        logger.warning("GEMINI_API_KEY not set — skipping enrichment this run")
-        return None
-    return GeminiClient(api_key=api_key)
 
 
 def run(db_path: str, output_dir: str, *, resolve_redirects: bool = True) -> int:
@@ -60,7 +51,7 @@ def run(db_path: str, output_dir: str, *, resolve_redirects: bool = True) -> int
         stored = store.upsert_all(conn, competitions)
 
         unenriched = store.get_unenriched(conn)
-        client = _make_llm_client() if unenriched else None
+        client = make_client_from_env() if unenriched else None
         if client is not None:
             try:
                 enriched = enrich_all(client, unenriched)

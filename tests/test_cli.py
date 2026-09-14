@@ -132,7 +132,7 @@ def test_run_enriches_and_scores_when_api_key_present(tmp_path, monkeypatch):
         "min_age": 18,
         "repeat_interval": None,
     }
-    monkeypatch.setattr(cli, "GeminiClient", lambda api_key: _FakeGeminiClient(payload))
+    monkeypatch.setattr(cli, "make_client_from_env", lambda: _FakeGeminiClient(payload))
 
     db_path = tmp_path / "competitions.db"
     out_dir = tmp_path / "out"

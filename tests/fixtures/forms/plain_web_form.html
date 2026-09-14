@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head><title>Win a Prize</title></head>
+<body>
+  <form id="entry-form">
+    <select id="title">
+      <option value="">Select</option>
+      <option value="Mr">Mr</option>
+      <option value="Mrs">Mrs</option>
+      <option value="Ms">Ms</option>
+      <option value="Mx">Mx</option>
+    </select>
+    <input id="first_name" type="text" />
+    <input id="last_name" type="text" />
+    <input id="dob" type="date" />
+    <input id="email" type="email" />
+    <input id="phone" type="tel" />
+    <input id="line1" type="text" />
+    <input id="town" type="text" />
+    <input id="postcode" type="text" />
+    <label>
+      <input id="marketing" type="checkbox" />
+      Send me marketing emails
+    </label>
+    <label>
+      <input id="terms" type="checkbox" />
+      I accept the terms and conditions
+    </label>
+    <button id="submit-button" type="submit">Enter</button>
+  </form>
+  <script>
+    document.getElementById('entry-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      document.body.setAttribute('data-submitted', 'true');
+    });
+  </script>
+</body>
+</html>
