@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 from collections import defaultdict
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
@@ -21,6 +22,14 @@ import httpx
 from competition_hunter.models import RawListing
 
 _TRACKING_PARAM_NAMES = {"ref", "fbclid", "gclid", "msclkid", "aff", "affiliate", "subid"}
+
+# Redirect resolution is one HTTP request per listing, and a real feed run
+# can have hundreds of listings. A short per-request timeout and a bounded
+# thread pool keep the worst case bounded (roughly N/POOL_SIZE * TIMEOUT)
+# instead of serial — a run against live feeds once took 10+ minutes and
+# climbing before this existed.
+_REDIRECT_TIMEOUT_SECONDS = 5.0
+_REDIRECT_POOL_SIZE = 10
 
 
 def _is_tracking_param(name: str) -> bool:
@@ -37,35 +46,58 @@ def strip_tracking_params(url: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(kept), ""))
 
 
-def resolve_redirect(url: str, timeout: float = 10.0) -> str:
+def resolve_redirect(url: str, client: httpx.Client | None = None) -> str:
     """Follow HTTP redirects to the true destination URL.
 
     Falls back to the original URL on any network error — a source being
-    briefly unreachable shouldn't sink the whole ingest run.
+    briefly unreachable shouldn't sink the whole ingest run. Reuses `client`
+    when given (connection pooling across a batch); opens and closes its own
+    otherwise, for one-off callers.
     """
+    owned_client = client is None
+    client = client or httpx.Client(follow_redirects=True, timeout=_REDIRECT_TIMEOUT_SECONDS)
     try:
-        with httpx.Client(follow_redirects=True, timeout=timeout) as client:
-            response = client.head(url)
-            return str(response.url)
+        response = client.head(url)
+        return str(response.url)
     except httpx.HTTPError:
         return url
+    finally:
+        if owned_client:
+            client.close()
 
 
-def canonicalize_url(url: str, *, resolve_redirects: bool = True) -> str:
-    resolved = resolve_redirect(url) if resolve_redirects else url
+def canonicalize_url(
+    url: str, *, resolve_redirects: bool = True, client: httpx.Client | None = None
+) -> str:
+    resolved = resolve_redirect(url, client=client) if resolve_redirects else url
     return strip_tracking_params(resolved)
-
-
-def competition_id(canonical_url: str) -> str:
-    return hashlib.sha256(canonical_url.encode("utf-8")).hexdigest()[:16]
 
 
 def group_by_canonical(
     listings: Iterable[RawListing], *, resolve_redirects: bool = True
 ) -> dict[str, list[RawListing]]:
     """Canonicalize each listing's link and group listings that land on the same one."""
+    listings = list(listings)
+
+    if resolve_redirects:
+        with (
+            httpx.Client(follow_redirects=True, timeout=_REDIRECT_TIMEOUT_SECONDS) as client,
+            ThreadPoolExecutor(max_workers=_REDIRECT_POOL_SIZE) as pool,
+        ):
+            canonical_urls = list(
+                pool.map(lambda listing: resolve_redirect(listing.link, client=client), listings)
+            )
+        canonical_urls = [strip_tracking_params(url) for url in canonical_urls]
+    else:
+        canonical_urls = [
+            canonicalize_url(listing.link, resolve_redirects=False) for listing in listings
+        ]
+
     groups: dict[str, list[RawListing]] = defaultdict(list)
-    for listing in listings:
-        canonical_url = canonicalize_url(listing.link, resolve_redirects=resolve_redirects)
+    for listing, canonical_url in zip(listings, canonical_urls, strict=True):
         groups[canonical_url].append(listing)
     return dict(groups)
+
+
+def competition_id(canonical_url: str) -> str:
+    return hashlib.sha256(canonical_url.encode("utf-8")).hexdigest()[:16]
