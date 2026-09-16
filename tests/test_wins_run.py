@@ -34,23 +34,24 @@ def conn(tmp_path):
     connection.close()
 
 
-def test_load_mailbox_config_flattens_toml_sections(mailbox_path):
-    config = wins_run.load_mailbox_config(mailbox_path)
+def test_load_imap_credentials_reads_the_imap_section(mailbox_path):
+    credentials = wins_run.load_imap_credentials(mailbox_path)
 
-    assert config.host == "imap.mail.yahoo.com"
-    assert config.email == "me@yahoo.com"
-    assert config.app_password == "app-password"
-    assert config.port == 993
-    assert config.since_days == 14
+    assert credentials.host == "imap.mail.yahoo.com"
+    assert credentials.email == "me@yahoo.com"
+    assert credentials.app_password == "app-password"
+    assert credentials.port == 993
 
 
-def test_load_mailbox_config_defaults_since_days_when_omitted(tmp_path):
+def test_load_wins_since_days_reads_the_wins_section(mailbox_path):
+    assert wins_run._load_wins_since_days(mailbox_path) == 14
+
+
+def test_load_wins_since_days_defaults_when_omitted(tmp_path):
     path = tmp_path / "mailbox.toml"
     path.write_text('[imap]\nhost = "h"\nemail = "e"\napp_password = "p"\n')
 
-    config = wins_run.load_mailbox_config(path)
-
-    assert config.since_days == wins_run.DEFAULT_SINCE_DAYS
+    assert wins_run._load_wins_since_days(path) == wins_run.DEFAULT_SINCE_DAYS
 
 
 class _FakeClient:

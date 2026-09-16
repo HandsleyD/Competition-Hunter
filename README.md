@@ -8,8 +8,8 @@ Build spec: [`docs/implementation-plan.md`](docs/implementation-plan.md).
 
 Phase 1 (RSS ingest → SQLite → dedupe → static dashboard), phase 2 (LLM
 enrichment, EV scoring, entry tracker groundwork), phase 3 (the local
-autofill entry layer) and the wins-ledger half of phase 4 are implemented.
-Newsletter ingest and selective scrapers are not built yet.
+autofill entry layer) and phase 4 (newsletter ingest, wins ledger) are
+implemented. Selective per-site scrapers are not built yet.
 
 ## Running it
 
@@ -64,31 +64,55 @@ mandatory marketing-consent checkbox you haven't opted into, aborts that
 one entry and queues it for manual review instead of guessing or bypassing
 either.
 
-## Wins ledger (local only)
+## The dedicated comping inbox (local only)
 
-design-options.md §6: the only real feedback signal on whether the scoring
-model is any good is a measured hit rate — actual wins against what was
-entered, broken down by score band. This reads a dedicated inbox's win
-notifications over plain IMAP with an app-specific password (not Gmail's
-OAuth — Google is phasing app passwords out, but Yahoo/iCloud/Zoho still
-issue them), so it never runs in CI either.
-
-Set up a dedicated address you only use for comping — Yahoo Mail is the
-easiest: Account Info → Account Security → "Generate app password" (your
-normal login password won't work over IMAP once 2-step verification is
-on). Then:
+Newsletter ingest and the wins ledger below both read one dedicated
+inbox — design-options.md §3B/§6: it receives both aggregator newsletters
+and win notifications, and reading it over plain IMAP with an
+app-specific password (not Gmail's OAuth — Google is phasing app
+passwords out, but Yahoo/iCloud/Zoho still issue them) means neither
+feature ever runs in CI, same as the entry layer above. Set it up once:
 
 ```bash
 cp mailbox.example.toml mailbox.toml   # gitignored — never commit this
 $EDITOR mailbox.toml                   # fill in the address + app password
+```
+
+Yahoo Mail is the easiest provider: Account Info → Account Security →
+"Generate app password" (your normal login password won't work over IMAP
+once 2-step verification is on). Subscribe the address to the aggregator
+newsletters you want ingested — ThePrizeFinder, Loquax, Competitions Time,
+Competition Database (see `docs/setup-accounts.md`).
+
+### Newsletter ingest
+
+```bash
+uv run competition-hunter-discover-local --db competitions.db --out dashboard/out --mailbox mailbox.toml
+```
+
+Runs everything `competition-hunter` (above) does, plus one more source:
+recent newsletter digests since `mailbox.toml`'s `[newsletter] since_days`
+(or `--since-days` to override). Each digest email typically bundles many
+competitions in one message, so this asks an LLM to pull out every
+individual listing (title, link, description) rather than trying to parse
+aggregator HTML layouts by hand — those listings then go through the same
+dedupe/enrich/score pipeline as the RSS feeds. Without a `GEMINI_API_KEY`
+this quietly falls back to the RSS-only behaviour of `competition-hunter`
+itself, since there's no LLM to extract listings with.
+
+### Wins ledger
+
+```bash
 uv run competition-hunter-wins --db competitions.db --mailbox mailbox.toml
 ```
 
-Each run fetches recent emails since `mailbox.toml`'s `[wins] since_days`
-(or `--since-days` to override), asks an LLM whether each one is a genuine
-win notification (vs. a newsletter, receipt, or "you've won!!" scam) rather
-than trying to solve this with keyword rules, and — for a real win — fuzzy-
-matches its guessed competition title back to something this project
-actually entered. Every email is recorded (win or not) so the same one is
-never reclassified on a later run, and each run logs a hit-rate breakdown
-by score band straight from that data.
+The only real feedback signal on whether the scoring model is any
+good — a measured hit rate, not a guess. Each run fetches recent emails
+since `mailbox.toml`'s `[wins] since_days` (or `--since-days` to
+override), asks an LLM whether each one is a genuine win notification (vs.
+a newsletter, receipt, or "you've won!!" scam) rather than trying to solve
+this with keyword rules, and — for a real win — fuzzy-matches its guessed
+competition title back to something this project actually entered. Every
+email is recorded (win or not) so the same one is never reclassified on a
+later run, and each run logs a hit-rate breakdown by score band straight
+from that data.

@@ -21,6 +21,7 @@ import logging
 
 from competition_hunter import store
 from competition_hunter.dashboard.build import build as build_dashboard
+from competition_hunter.ingest.base import Source
 from competition_hunter.ingest.rss import default_sources
 from competition_hunter.llm import make_client_from_env
 from competition_hunter.pipeline.enrich import enrich_all
@@ -30,11 +31,21 @@ from competition_hunter.pipeline.score import score_all
 logger = logging.getLogger("competition_hunter")
 
 
-def run(db_path: str, output_dir: str, *, resolve_redirects: bool = True) -> int:
+def run(
+    db_path: str,
+    output_dir: str,
+    *,
+    resolve_redirects: bool = True,
+    extra_sources: list[Source] | None = None,
+) -> int:
+    """`extra_sources` lets a local-only caller (discover_local.py) add
+    sources that need real credentials — e.g. the newsletter inbox — on top
+    of the CI-safe RSS feeds this function otherwise sticks to. cli.main()
+    never passes any, so discover.yml's scheduled run is unaffected."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     listings = []
-    for source in default_sources():
+    for source in [*default_sources(), *(extra_sources or [])]:
         try:
             fetched = list(source.fetch())
         except Exception:

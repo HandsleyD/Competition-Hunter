@@ -1,9 +1,11 @@
 # Copy to `mailbox.toml` and fill in. NEVER commit mailbox.toml — it holds a
-# real IMAP password. Only competition_hunter/wins/ reads it, and it never
-# runs in CI.
+# real IMAP password. Only competition_hunter/mailbox.py's readers (the wins
+# ledger and newsletter ingest) read it, and neither ever runs in CI.
 #
-# Use a dedicated inbox, not your everyday one — the same address the
-# newsletter ingest (a later addition) would also feed into.
+# Use a dedicated inbox, not your everyday one. Subscribe it to the
+# aggregator newsletters you want ingested — ThePrizeFinder, Loquax,
+# Competitions Time, Competition Database (see docs/setup-accounts.md) —
+# since win notifications land in the same inbox too.
 #
 # Yahoo Mail: Account Info -> Account Security -> "Generate app password".
 # Your normal Yahoo password won't work over IMAP once 2-step verification
@@ -19,3 +21,6 @@ app_password = ""   # the generated app password, not your normal login password
 
 [wins]
 since_days = 30   # how far back to look for win notifications on a fresh run
+
+[newsletter]
+since_days = 7    # how far back to look for newsletter digests on a fresh run
