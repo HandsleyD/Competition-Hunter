@@ -19,13 +19,11 @@ import tomllib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from pydantic import BaseModel
-
 from competition_hunter import store
 from competition_hunter.llm import make_client_from_env
+from competition_hunter.mailbox import ImapMailbox, load_imap_credentials
 from competition_hunter.models import EmailMessage, Win
 from competition_hunter.wins.classify import classify_email
-from competition_hunter.wins.mailbox import ImapMailbox
 from competition_hunter.wins.match import find_matching_competition
 
 logger = logging.getLogger("competition_hunter.wins")
@@ -44,20 +42,10 @@ SCORE_BANDS: list[tuple[float, float]] = [
 ]
 
 
-class MailboxConfig(BaseModel):
-    host: str
-    email: str
-    app_password: str
-    port: int = 993
-    since_days: int = DEFAULT_SINCE_DAYS
-
-
-def load_mailbox_config(path: str | Path) -> MailboxConfig:
+def _load_wins_since_days(path: str | Path) -> int:
     with open(path, "rb") as f:
         data = tomllib.load(f)
-    imap = data.get("imap", {})
-    since_days = data.get("wins", {}).get("since_days", DEFAULT_SINCE_DAYS)
-    return MailboxConfig(**imap, since_days=since_days)
+    return data.get("wins", {}).get("since_days", DEFAULT_SINCE_DAYS)
 
 
 def _process_one(conn, client, email: EmailMessage) -> bool:
@@ -91,14 +79,18 @@ def _log_hit_rates(conn) -> None:
 def run(db_path: str, mailbox_path: str, *, since_days: int | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    config = load_mailbox_config(mailbox_path)
+    credentials = load_imap_credentials(mailbox_path)
     client = make_client_from_env()
     if client is None:
         logger.warning("no LLM client available — cannot classify emails, skipping this run")
         return 0
 
-    mailbox = ImapMailbox(config.host, config.email, config.app_password, port=config.port)
-    since = (datetime.now(UTC) - timedelta(days=since_days or config.since_days)).date()
+    mailbox = ImapMailbox(
+        credentials.host, credentials.email, credentials.app_password, port=credentials.port
+    )
+    since = (
+        datetime.now(UTC) - timedelta(days=since_days or _load_wins_since_days(mailbox_path))
+    ).date()
 
     conn = store.connect(db_path)
     try:

@@ -2,7 +2,7 @@ from datetime import date
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from competition_hunter.wins.mailbox import ImapMailbox, parse_message
+from competition_hunter.mailbox import ImapMailbox, parse_message
 
 
 def _plain_message(

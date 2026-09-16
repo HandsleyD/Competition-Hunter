@@ -52,6 +52,23 @@ def test_run_ingests_dedupes_and_builds_dashboard(tmp_path, monkeypatch):
     assert "Win Big" in (out_dir / "index.html").read_text()
 
 
+def test_run_includes_extra_sources_alongside_the_default_ones(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "default_sources", lambda: [])
+    extra = _FakeSource(
+        "newsletter", [raw_listing(link="https://example.com/comp", title="From Newsletter")]
+    )
+
+    exit_code = cli.run(
+        str(tmp_path / "db.sqlite"),
+        str(tmp_path / "out"),
+        resolve_redirects=False,
+        extra_sources=[extra],
+    )
+
+    assert exit_code == 0
+    assert "From Newsletter" in (tmp_path / "out" / "index.html").read_text()
+
+
 def test_run_skips_failing_source_without_crashing(tmp_path, monkeypatch):
     class _BrokenSource:
         name = "broken"

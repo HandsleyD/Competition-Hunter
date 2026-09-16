@@ -1,10 +1,9 @@
-"""IMAP mailbox ingest for win-notification emails.
+"""Shared IMAP mailbox access for the dedicated comping inbox.
 
-design-options.md §6: the same dedicated inbox that receives the newsletters
-receives the win notifications, and classifying it is the only real
-feedback signal on whether the scoring model is any good. Local-only, like
-the entry layer — mailbox.toml holds real IMAP credentials and this never
-runs in CI.
+design-options.md §3B/§6: the same dedicated inbox that receives aggregator
+newsletters also receives win notifications — `ingest/newsletter.py` and
+`wins/` both read it through this module. Local-only for either consumer:
+mailbox.toml holds real IMAP credentials and this never runs in CI.
 
 Uses plain IMAP + an app-specific password rather than OAuth:
 implementation-plan.md's Gmail OAuth section exists because Google is
@@ -18,15 +17,35 @@ import hashlib
 import imaplib
 import logging
 import re
+import tomllib
 from datetime import UTC, date, datetime
 from email import message_from_bytes
 from email import utils as email_utils
 from email.header import decode_header
 from email.message import Message
+from pathlib import Path
+
+from pydantic import BaseModel
 
 from competition_hunter.models import EmailMessage
 
 logger = logging.getLogger(__name__)
+
+
+class ImapCredentials(BaseModel):
+    host: str
+    email: str
+    app_password: str
+    port: int = 993
+
+
+def load_imap_credentials(path: str | Path) -> ImapCredentials:
+    """Reads mailbox.toml's `[imap]` table — the part every consumer of the
+    dedicated inbox needs regardless of what it's using the inbox for."""
+    with open(path, "rb") as f:
+        data = tomllib.load(f)
+    return ImapCredentials(**data.get("imap", {}))
+
 
 _TAG_RE = re.compile(r"<[^>]+>")
 
